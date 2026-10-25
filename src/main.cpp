@@ -1,67 +1,88 @@
+#include "core/PackageManager.h"
 #include "thumbnail/DebThumbnailer.h"
 
-#include <array>
-#include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <string>
-
-namespace ultrapkg {
 
 namespace {
 
-std::string shellQuote(const std::string& value) {
-    std::string out;
-    out.reserve(value.size() + 2);
-    out.push_back('\'');
-    for (char c : value) {
-        if (c == '\'') {
-            out += "'\\''";
-        } else {
-            out.push_back(c);
-        }
-    }
-    out.push_back('\'');
-    return out;
+void printHelp() {
+    std::cout << "Usage:\n";
+    std::cout << "  ultrapkg install <package.deb>\n";
+    std::cout << "  ultrapkg remove <package-name>\n";
+    std::cout << "  ultrapkg info <package.deb>\n";
+    std::cout << "  ultrapkg thumb <package.deb> <output.png> [size]\n";
+    std::cout << "  ultrapkg help\n";
 }
 
 } // namespace
 
-bool DebThumbnailer::generatePreview(const std::filesystem::path& deb_path,
-                                    const std::filesystem::path& output_path,
-                                    unsigned int size,
-                                    std::ostream& log) {
-    if (!std::filesystem::exists(deb_path)) {
-        log << "deb package not found: " << deb_path << '\n';
-        return false;
+int main(int argc, char** argv) {
+    try {
+        if (argc < 2) {
+            printHelp();
+            return 1;
+        }
+
+        const std::string command = argv[1];
+
+        if (command == "help" || command == "--help" || command == "-h") {
+            printHelp();
+            return 0;
+        }
+
+        if (command == "install") {
+            if (argc < 3) {
+                printHelp();
+                return 1;
+            }
+            ultrapkg::PackageManager manager;
+            return manager.install(std::filesystem::path(argv[2]), std::cout) ? 0 : 2;
+        }
+
+        if (command == "remove") {
+            if (argc < 3) {
+                printHelp();
+                return 1;
+            }
+            ultrapkg::PackageManager manager;
+            return manager.uninstall(argv[2], std::cout) ? 0 : 2;
+        }
+
+        if (command == "info") {
+            if (argc < 3) {
+                printHelp();
+                return 1;
+            }
+            ultrapkg::PackageManager manager;
+            return manager.inspect(std::filesystem::path(argv[2]), std::cout) ? 0 : 2;
+        }
+
+        if (command == "thumb") {
+            if (argc < 4) {
+                printHelp();
+                return 1;
+            }
+
+            unsigned int size = 128;
+            if (argc >= 5) {
+                size = static_cast<unsigned int>(std::stoul(argv[4]));
+            }
+
+            return ultrapkg::DebThumbnailer::generatePreview(
+                std::filesystem::path(argv[2]),
+                std::filesystem::path(argv[3]),
+                size,
+                std::cout) ? 0 : 3;
+        }
+
+        std::cerr << "unknown command: " << command << '\n';
+        printHelp();
+        return 1;
+    } catch (const std::exception& ex) {
+        std::cerr << "ultrapkg error: " << ex.what() << '\n';
+        return 1;
     }
-
-    if (!output_path.parent_path().empty()) {
-        std::filesystem::create_directories(output_path.parent_path());
-    }
-
-    const std::string temp_dir = "/tmp/ultrapkg-thumb-" + std::to_string(std::time(nullptr));
-    const std::string extract_cmd = "mkdir -p " + shellQuote(temp_dir) + " && dpkg-deb -x " + shellQuote(deb_path.string()) + " " + shellQuote(temp_dir);
-    if (std::system(extract_cmd.c_str()) != 0) {
-        log << "failed to extract package to temporary directory\n";
-        return false;
-    }
-
-    const std::string render_cmd =
-        "convert -size " + std::to_string(size) + "x" + std::to_string(size) +
-        " xc:'#0f172a' -fill '#f8fafc' -draw 'roundrectangle 8,8 " +
-        std::to_string(size - 8) + "," + std::to_string(size - 8) + " 14,14' " +
-        "-fill '#7c3aed' -draw 'rectangle 14,14 " + std::to_string(size - 14) + "," +
-        std::to_string(size - 14) + "' -fill white -gravity center -pointsize 20 -annotate +0+0 'deb' " +
-        shellQuote(output_path.string());
-
-    if (std::system(render_cmd.c_str()) != 0) {
-        log << "thumbnail generation failed\n";
-        return false;
-    }
-
-    return true;
 }
-
-} // namespace ultrapkg
