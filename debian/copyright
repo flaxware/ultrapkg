@@ -1,7 +1,0 @@
-Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: ultrapkg
-Source: ultrapkg
-
-Files: *
-Copyright: 2026 flaxware
-License: GPL-3.0-or-later
