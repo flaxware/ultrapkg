@@ -1,89 +1,17 @@
-#include "core/PackageInstaller.h"
+Source: ultrapkg
+Section: utils
+Priority: optional
+Maintainer: flaxware <flaxware@users.noreply.github.com>
+Build-Depends: debhelper (>= 12), cmake, g++, pkg-config
+Standards-Version: 4.6.0
+Rules-Requires-Root: no
+Homepage: https://github.com/flaxware/ultrapkg
 
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <sstream>
-#include <string>
-#include <unistd.h>
+Package: ultrapkg
+Architecture: any
+Depends: ${misc:Depends}, coreutils
+Description: Lightweight local package wrapper for flax.system
+ Ultrapkg provides a lightweight apt/aptitude-style command set and direct .deb
+ handling without depending on full external package manager execution for the
+ common local workflow.
 
-namespace ultrapkg {
-
-namespace {
-
-std::string shellQuote(const std::string& value) {
-    std::string out;
-    out.reserve(value.size() + 2);
-    out.push_back('\'');
-    for (char c : value) {
-        if (c == '\'') {
-            out += "'\\''";
-        } else {
-            out.push_back(c);
-        }
-    }
-    out.push_back('\'');
-    return out;
-}
-
-bool runCommand(const std::string& command, std::ostream& log) {
-    log << "running: " << command << '\n';
-    const int status = std::system(command.c_str());
-    return status == 0;
-}
-
-} // namespace
-
-PackageInstaller::PackageInstaller(std::string root_prefix)
-    : root_prefix_(std::move(root_prefix)) {}
-
-bool PackageInstaller::isRoot() const {
-    return ::getuid() == 0;
-}
-
-std::string PackageInstaller::buildInstallCommand(const std::filesystem::path& deb_path) const {
-    std::string command = "dpkg -i ";
-    if (!root_prefix_.empty()) {
-        command += root_prefix_ + " ";
-    }
-    command += shellQuote(deb_path.string());
-    return command;
-}
-
-std::string PackageInstaller::buildRemoveCommand(const std::string& package_name) const {
-    std::string command = "dpkg -r ";
-    if (!root_prefix_.empty()) {
-        command += root_prefix_ + " ";
-    }
-    command += package_name;
-    return command;
-}
-
-bool PackageInstaller::installPackage(const std::filesystem::path& deb_path, std::ostream& log) const {
-    if (!std::filesystem::exists(deb_path)) {
-        log << "package file not found: " << deb_path << '\n';
-        return false;
-    }
-
-    const std::string command = isRoot()
-        ? buildInstallCommand(deb_path)
-        : "pkexec " + buildInstallCommand(deb_path);
-
-    return runCommand(command, log);
-}
-
-bool PackageInstaller::uninstallPackage(const std::string& package_name, std::ostream& log) const {
-    if (package_name.empty()) {
-        log << "package name is empty\n";
-        return false;
-    }
-
-    const std::string command = isRoot()
-        ? buildRemoveCommand(package_name)
-        : "pkexec " + buildRemoveCommand(package_name);
-
-    return runCommand(command, log);
-}
-
-} // namespace ultrapkg

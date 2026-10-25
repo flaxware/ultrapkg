@@ -16,14 +16,14 @@ public:
 private:
     std::string value_;
     static std::string normalize(std::string value);
-    static int compareSegments(const std::string& lhs, const std::string& rhs);
+    static int compareSegments(const std::string& left, const std::string& right);
 };
 
-bool operator==(const PackageVersion& lhs, const PackageVersion& rhs);
-bool operator!=(const PackageVersion& lhs, const PackageVersion& rhs);
-bool operator<(const PackageVersion& lhs, const PackageVersion& rhs);
-bool operator>(const PackageVersion& lhs, const PackageVersion& rhs);
-bool operator<=(const PackageVersion& lhs, const PackageVersion& rhs);
-bool operator>=(const PackageVersion& lhs, const PackageVersion& rhs);
+bool operator==(const PackageVersion& left, const PackageVersion& right);
+bool operator!=(const PackageVersion& left, const PackageVersion& right);
+bool operator<(const PackageVersion& left, const PackageVersion& right);
+bool operator>(const PackageVersion& left, const PackageVersion& right);
+bool operator<=(const PackageVersion& left, const PackageVersion& right);
+bool operator>=(const PackageVersion& left, const PackageVersion& right);
 
 } // namespace ultrapkg

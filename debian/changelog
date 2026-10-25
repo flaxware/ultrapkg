@@ -1,33 +1,37 @@
-cmake_minimum_required(VERSION 3.21)
-project(ultrapkg VERSION 0.1.0 LANGUAGES CXX)
+# FLAX OS💎
+> Ultrapkg — the lightweight .deb manager for Flax system.
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+Ultrapkg is designed as a secure, lightweight package helper for Debian/Ubuntu-style local packages.
+It keeps the common apt and aptitude workflows available, but does not depend on the heavy external package manager stack for normal operations.
 
-add_executable(ultrapkg
-    src/main.cpp
-    src/core/PackageInfo.cpp
-    src/core/PackageInstaller.cpp
-    src/core/PackageManager.cpp
-    src/core/PackageVersion.cpp
-    src/thumbnail/DebThumbnailer.cpp
-)
+## Version
 
-target_include_directories(ultrapkg
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
+This project starts at v0.1.0.
 
-enable_testing()
-add_executable(ultrapkg_tests
-    tests/VersionTests.cpp
-    src/core/PackageVersion.cpp
-)
-target_include_directories(ultrapkg_tests
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-add_test(NAME ultrapkg_version_tests COMMAND ultrapkg_tests)
+## Command model
 
-install(TARGETS ultrapkg DESTINATION bin)
+- `ultrapkg install <package.deb>`: lightweight install wrapper
+- `ultrapkg -dpkg <package.deb>`: direct `.deb` path install wrapper
+- `ultrapkg apt ...`: apt-like commands implemented locally
+- `ultrapkg aptitude ...`: aptitude-like queries implemented locally
+- `ultrapkg info <package.deb>`: inspect package metadata directly from the archive
+
+## Security and design
+
+- no direct dependency on external `apt` or `aptitude` for standard operations
+- local receipt database stored under a controlled root prefix
+- path validation for package files and root directories
+- version comparison implemented in-process
+- minimal resource usage and no unnecessary background services
+
+## Build
+
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+## License
+
+GPL-3.0-or-later.

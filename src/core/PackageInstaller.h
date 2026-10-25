@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -10,7 +9,6 @@
 #include <vector>
 
 namespace ultrapkg {
-
 namespace {
 
 std::string shellQuote(const std::string& value) {
@@ -26,6 +24,16 @@ std::string shellQuote(const std::string& value) {
     }
     out.push_back('\'');
     return out;
+}
+
+std::string trim(std::string value) {
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t' || value.front() == '\n' || value.front() == '\r')) {
+        value.erase(value.begin());
+    }
+    while (!value.empty() && (value.back() == ' ' || value.back() == '\t' || value.back() == '\n' || value.back() == '\r')) {
+        value.pop_back();
+    }
+    return value;
 }
 
 std::string execCapture(const std::string& command) {
@@ -45,39 +53,33 @@ std::string execCapture(const std::string& command) {
     return result;
 }
 
-std::string trim(std::string value) {
-    while (!value.empty() && (value.front() == ' ' || value.front() == '\t' || value.front() == '\r' || value.front() == '\n')) {
-        value.erase(value.begin());
-    }
-    while (!value.empty() && (value.back() == ' ' || value.back() == '\t' || value.back() == '\r' || value.back() == '\n')) {
-        value.pop_back();
-    }
-    return value;
-}
-
-std::string extractControlData(const std::filesystem::path& deb_path) {
-    const std::string arListCmd = "ar t " + shellQuote(deb_path.string()) + " 2>/dev/null";
-    const std::string arList = execCapture(arListCmd);
-    if (arList.empty()) {
+std::string readControlFromArchive(const std::filesystem::path& deb_path) {
+    if (!std::filesystem::exists(deb_path) || !std::filesystem::is_regular_file(deb_path)) {
         return {};
     }
 
-    std::vector<std::string> members;
-    std::stringstream stream(arList);
-    std::string member;
-    while (std::getline(stream, member)) {
-        if (!member.empty()) {
-            members.push_back(member);
-        }
+    const std::filesystem::path abs_path = std::filesystem::absolute(deb_path);
+    const std::string archive_list = execCapture("ar t " + shellQuote(abs_path.string()) + " 2>/dev/null");
+    if (archive_list.empty()) {
+        return {};
     }
 
-    for (const auto& candidate : members) {
-        if (candidate.find("control.tar") != std::string::npos) {
-            const std::string extractCmd = "ar p " + shellQuote(deb_path.string()) + " " + shellQuote(candidate) + " | tar -xOf - ./control 2>/dev/null";
-            const std::string control = execCapture(extractCmd);
-            if (!control.empty()) {
-                return control;
-            }
+    std::istringstream stream(archive_list);
+    std::string member;
+    while (std::getline(stream, member)) {
+        if (member.empty()) {
+            continue;
+        }
+        if (member.find("control.tar") == std::string::npos) {
+            continue;
+        }
+
+        const std::string extract_cmd =
+            "ar p " + shellQuote(abs_path.string()) + " " + shellQuote(member) +
+            " | tar -xOf - ./control 2>/dev/null";
+        const std::string control = execCapture(extract_cmd);
+        if (!control.empty()) {
+            return control;
         }
     }
 
@@ -88,22 +90,21 @@ std::string extractControlData(const std::filesystem::path& deb_path) {
 
 PackageInfo PackageInfoReader::fromDeb(const std::filesystem::path& deb_path) {
     PackageInfo info{};
-
-    if (!std::filesystem::exists(deb_path)) {
+    if (!std::filesystem::exists(deb_path) || !std::filesystem::is_regular_file(deb_path)) {
         return info;
     }
 
-    const std::string control = extractControlData(deb_path);
+    const std::string control = readControlFromArchive(deb_path);
     if (control.empty()) {
         return info;
     }
 
+    std::istringstream input(control);
+    std::string line;
     std::string current_field;
     std::string current_value;
-    std::stringstream input(control);
-    std::string line;
 
-    const auto assignField = [&]() {
+    const auto assign = [&]() {
         if (current_field == "Package") {
             info.name = trim(current_value);
         } else if (current_field == "Version") {
@@ -119,7 +120,7 @@ PackageInfo PackageInfoReader::fromDeb(const std::filesystem::path& deb_path) {
 
     while (std::getline(input, line)) {
         if (line.empty()) {
-            assignField();
+            assign();
             current_field.clear();
             current_value.clear();
             continue;
@@ -132,7 +133,7 @@ PackageInfo PackageInfoReader::fromDeb(const std::filesystem::path& deb_path) {
         }
 
         if (!current_field.empty()) {
-            assignField();
+            assign();
         }
 
         current_field = trim(line.substr(0, pos));
@@ -140,7 +141,7 @@ PackageInfo PackageInfoReader::fromDeb(const std::filesystem::path& deb_path) {
     }
 
     if (!current_field.empty()) {
-        assignField();
+        assign();
     }
 
     info.valid = !info.name.empty() && !info.version.empty();

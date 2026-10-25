@@ -1,5 +1,4 @@
 #include "core/PackageManager.h"
-#include "core/PackageVersion.h"
 #include "thumbnail/DebThumbnailer.h"
 
 #include <filesystem>
@@ -15,13 +14,17 @@ void printHelp() {
     std::cout << "  ultrapkg install <package.deb>\n";
     std::cout << "  ultrapkg remove <package-name>\n";
     std::cout << "  ultrapkg info <package.deb>\n";
+    std::cout << "  ultrapkg list\n";
     std::cout << "  ultrapkg search <query>\n";
     std::cout << "  ultrapkg show <package-name>\n";
-    std::cout << "  ultrapkg list\n";
     std::cout << "  ultrapkg apt install <package.deb>\n";
+    std::cout << "  ultrapkg apt list\n";
     std::cout << "  ultrapkg apt search <query>\n";
     std::cout << "  ultrapkg apt show <package-name>\n";
     std::cout << "  ultrapkg aptitude search <query>\n";
+    std::cout << "  ultrapkg aptitude depends <package-name>\n";
+    std::cout << "  ultrapkg -dpkg <package.deb>\n";
+    std::cout << "  ultrapkg --dpkg <package.deb>\n";
     std::cout << "  ultrapkg thumb <package.deb> <output.png> [size]\n";
     std::cout << "  ultrapkg help\n";
 }
@@ -51,6 +54,15 @@ int main(int argc, char** argv) {
             return 0;
         }
 
+        if (command == "-dpkg" || command == "--dpkg") {
+            if (argc < 3) {
+                printHelp();
+                return 1;
+            }
+            ultrapkg::PackageManager manager;
+            return manager.install(std::filesystem::path(argv[2]), std::cout) ? 0 : 2;
+        }
+
         if (command == "install") {
             if (argc < 3) {
                 printHelp();
@@ -78,6 +90,11 @@ int main(int argc, char** argv) {
             return manager.inspect(std::filesystem::path(argv[2]), std::cout) ? 0 : 2;
         }
 
+        if (command == "list") {
+            ultrapkg::PackageManager manager;
+            return manager.aptList(std::cout) ? 0 : 1;
+        }
+
         if (command == "search") {
             if (argc < 3) {
                 printHelp();
@@ -96,16 +113,12 @@ int main(int argc, char** argv) {
             return manager.aptShow(argv[2], std::cout) ? 0 : 1;
         }
 
-        if (command == "list") {
-            ultrapkg::PackageManager manager;
-            return manager.aptList(std::cout) ? 0 : 1;
-        }
-
         if (command == "apt") {
             if (argc < 3) {
                 printHelp();
                 return 1;
             }
+
             ultrapkg::PackageManager manager;
             const std::string subcommand = argv[2];
             if (subcommand == "install") {
@@ -122,6 +135,9 @@ int main(int argc, char** argv) {
                 }
                 return manager.aptRemove(argv[3], std::cout) ? 0 : 2;
             }
+            if (subcommand == "list") {
+                return manager.aptList(std::cout) ? 0 : 1;
+            }
             if (subcommand == "search") {
                 if (argc < 4) {
                     printHelp();
@@ -136,9 +152,6 @@ int main(int argc, char** argv) {
                 }
                 return manager.aptShow(argv[3], std::cout) ? 0 : 1;
             }
-            if (subcommand == "list") {
-                return manager.aptList(std::cout) ? 0 : 1;
-            }
             printHelp();
             return 1;
         }
@@ -148,6 +161,7 @@ int main(int argc, char** argv) {
                 printHelp();
                 return 1;
             }
+
             ultrapkg::PackageManager manager;
             const std::string subcommand = argv[2];
             if (subcommand == "search") {

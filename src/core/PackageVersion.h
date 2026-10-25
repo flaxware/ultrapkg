@@ -1,39 +1,30 @@
+#include "core/PackageManager.h"
+
 #include "core/PackageInfo.h"
 #include "core/PackageInstaller.h"
-#include "core/PackageManager.h"
 #include "core/PackageVersion.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <vector>
 
 namespace ultrapkg {
-
 namespace {
 
 std::filesystem::path defaultRootPath() {
-    const char* env_root = std::getenv("ULTRAPKG_ROOT");
-    if (env_root != nullptr && env_root[0] != '\0') {
-        return std::filesystem::path(env_root);
-    }
-
-    const char* home = std::getenv("HOME");
-    if (home != nullptr && home[0] != '\0') {
-        return std::filesystem::path(home) / ".local" / "share" / "ultrapkg";
-    }
-
-    return std::filesystem::path("/var/lib/ultrapkg");
+    return PackageInstaller::defaultRootPath();
 }
 
 std::vector<PackageInfo> readInstalledReceipts() {
-    const std::filesystem::path root = defaultRootPath();
-    const std::filesystem::path installed_dir = root / "installed";
+    const auto root = defaultRootPath();
+    const auto installed_dir = root / "installed";
     std::vector<PackageInfo> packages;
-    if (!std::filesystem::exists(installed_dir)) {
+
+    if (!std::filesystem::exists(installed_dir) || !std::filesystem::is_directory(installed_dir)) {
         return packages;
     }
 
@@ -64,6 +55,7 @@ std::vector<PackageInfo> readInstalledReceipts() {
                 info.description = value;
             }
         }
+
         if (!info.name.empty() && !info.version.empty()) {
             info.valid = true;
             packages.push_back(info);
@@ -76,9 +68,9 @@ std::vector<PackageInfo> readInstalledReceipts() {
     return packages;
 }
 
-std::string toLower(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
+std::string lower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
     });
     return value;
 }
@@ -87,10 +79,10 @@ bool matchesQuery(const PackageInfo& info, const std::string& query) {
     if (query.empty()) {
         return true;
     }
-    const std::string lower = toLower(query);
-    return toLower(info.name).find(lower) != std::string::npos ||
-           toLower(info.description).find(lower) != std::string::npos ||
-           toLower(info.version).find(lower) != std::string::npos;
+    const auto q = lower(query);
+    return lower(info.name).find(q) != std::string::npos ||
+           lower(info.version).find(q) != std::string::npos ||
+           lower(info.description).find(q) != std::string::npos;
 }
 
 } // namespace
@@ -191,26 +183,26 @@ bool PackageManager::aptitudeDepends(const std::string& package_name, std::ostre
 }
 
 bool PackageManager::aptitudeInstall(const std::filesystem::path& deb_path, std::ostream& log) {
-    return aptInstall(deb_path, log);
+    return install(deb_path, log);
 }
 
 bool PackageManager::upgrade(const std::string& package_name, const std::filesystem::path& deb_path, std::ostream& log) {
-    const auto info = PackageInfoReader::fromDeb(deb_path);
-    if (!info.valid) {
+    const auto incoming = PackageInfoReader::fromDeb(deb_path);
+    if (!incoming.valid) {
         log << "could not read valid package metadata from: " << deb_path << '\n';
         return false;
     }
 
     const auto installed = readInstalledReceipts();
-    auto it = std::find_if(installed.begin(), installed.end(), [&](const PackageInfo& entry) {
-        return entry.name == package_name || entry.name == info.name;
+    auto it = std::find_if(installed.begin(), installed.end(), [&](const PackageInfo& p) {
+        return p.name == package_name || p.name == incoming.name;
     });
 
     if (it != installed.end()) {
         const PackageVersion current(it->version);
-        const PackageVersion incoming(info.version);
-        if (incoming < current) {
-            log << "package " << package_name << " is already newer or equal to " << info.version << '\n';
+        const PackageVersion next(incoming.version);
+        if (next <= current) {
+            log << "package " << package_name << " is already at or newer than " << incoming.version << '\n';
             return true;
         }
     }

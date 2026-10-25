@@ -1,5 +1,24 @@
-ultrapkg (1.0.0-1) unstable; urgency=medium
+Source: ultrapkg
+Section: utils
+Priority: optional
+Maintainer: flaxware <flaxware@users.noreply.github.com>
+Build-Depends: debhelper (>= 12), cmake, g++, pkg-config
+Standards-Version: 4.6.0
+Homepage: https://github.com/flaxware/ultrapkg
+Rules-Requires-Root: no
 
-  * Initial Debian packaging for Ultrapkg.
+Package: ultrapkg
+Architecture: any
+Depends: ${misc:Depends}, coreutils
+Description: Lightweight local package wrapper for flax.system
+ Ultrapkg provides a lightweight apt/aptitude-style command set and direct .deb
+ handling without depending on full external package manager execution for the
+ common local workflow.
+
+ultrapkg (0.1.0-1) unstable; urgency=medium
+
+  * Initial v0.1.0 release with lightweight apt/aptitude-like wrappers,
+    direct .deb install support, and safe local receipt management.
 
  -- flaxware <flaxware@users.noreply.github.com>  Sat, 25 Oct 2026 00:00:00 +0000
+

@@ -2,75 +2,50 @@
 
 #include "core/PackageInfo.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
-#include <sstream>
 #include <string>
 #include <unistd.h>
 
 namespace ultrapkg {
-
 namespace {
 
-std::string shellQuote(const std::string& value) {
-    std::string out;
-    out.reserve(value.size() + 2);
-    out.push_back('\'');
-    for (char c : value) {
-        if (c == '\'') {
-            out += "'\\''";
-        } else {
-            out.push_back(c);
-        }
-    }
-    out.push_back('\'');
-    return out;
-}
-
-bool runCommand(const std::string& command, std::ostream& log) {
-    log << "running: " << command << '\n';
-    const int status = std::system(command.c_str());
-    return status == 0;
-}
-
-std::filesystem::path defaultRootPath(const std::string& root_prefix) {
-    if (!root_prefix.empty()) {
-        return std::filesystem::path(root_prefix);
+std::filesystem::path canonicalizePath(const std::filesystem::path& value) {
+    std::error_code ec;
+    auto abs = std::filesystem::absolute(value, ec);
+    if (ec) {
+        return value;
     }
 
-    if (::getuid() == 0) {
-        return std::filesystem::path("/var/lib/ultrapkg");
+    auto normalized = std::filesystem::weakly_canonical(abs, ec);
+    if (ec) {
+        normalized = abs;
+    }
+    return normalized;
+}
+
+bool ensureWriteableDir(const std::filesystem::path& dir) {
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        return false;
+    }
+    return std::filesystem::exists(dir) && std::filesystem::is_directory(dir);
+}
+
+std::filesystem::path defaultRoot() {
+    const char* env_root = std::getenv("ULTRAPKG_ROOT");
+    if (env_root != nullptr && env_root[0] != '\0') {
+        return canonicalizePath(std::filesystem::path(env_root));
     }
 
     const char* home = std::getenv("HOME");
     if (home != nullptr && home[0] != '\0') {
-        return std::filesystem::path(home) / ".local" / "share" / "ultrapkg";
+        return canonicalizePath(std::filesystem::path(home) / ".local" / "share" / "ultrapkg");
     }
 
-    return std::filesystem::path(".") / ".ultrapkg";
-}
-
-void writeReceipt(const std::filesystem::path& db_dir, const PackageInfo& info, const std::filesystem::path& source) {
-    const auto receipt_dir = db_dir / "installed";
-    std::filesystem::create_directories(receipt_dir);
-
-    const auto receipt_path = receipt_dir / (info.name + ".receipt");
-    std::ofstream out(receipt_path, std::ios::trunc);
-    if (!out) {
-        return;
-    }
-
-    out << "name=" << info.name << '\n';
-    out << "version=" << info.version << '\n';
-    out << "architecture=" << info.architecture << '\n';
-    out << "maintainer=" << info.maintainer << '\n';
-    out << "description=" << info.description << '\n';
-    out << "source=" << source.string() << '\n';
-}
-
-std::filesystem::path installedDbPath(const std::string& root_prefix) {
-    return defaultRootPath(root_prefix) / "installed";
+    return canonicalizePath(std::filesystem::path("/var/lib/ultrapkg"));
 }
 
 } // namespace
@@ -78,24 +53,38 @@ std::filesystem::path installedDbPath(const std::string& root_prefix) {
 PackageInstaller::PackageInstaller(std::string root_prefix)
     : root_prefix_(std::move(root_prefix)) {}
 
+std::filesystem::path PackageInstaller::defaultRootPath() {
+    return defaultRoot();
+}
+
+std::filesystem::path PackageInstaller::canonicalize(const std::filesystem::path& path) {
+    return canonicalizePath(path);
+}
+
+std::filesystem::path PackageInstaller::safeRootPath() const {
+    const auto configured = root_prefix_.empty() ? defaultRoot() : canonicalizePath(root_prefix_);
+    std::filesystem::path root = configured;
+    if (root.empty()) {
+        root = defaultRoot();
+    }
+
+    if (std::filesystem::exists(root) && !std::filesystem::is_directory(root)) {
+        throw std::runtime_error("package root is not a directory: " + root.string());
+    }
+
+    if (!ensureWriteableDir(root)) {
+        throw std::runtime_error("could not prepare package root: " + root.string());
+    }
+
+    return root;
+}
+
 bool PackageInstaller::isRoot() const {
     return ::getuid() == 0;
 }
 
-std::string PackageInstaller::buildInstallCommand(const std::filesystem::path& deb_path) const {
-    const std::string root = defaultRootPath(root_prefix_).string();
-    std::string command = "mkdir -p " + shellQuote(root + "/archives") + " && mkdir -p " + shellQuote(root + "/installed") + " && cp " + shellQuote(deb_path.string()) + " " + shellQuote(root + "/archives/" + deb_path.filename().string());
-    return command;
-}
-
-std::string PackageInstaller::buildRemoveCommand(const std::string& package_name) const {
-    const std::string root = defaultRootPath(root_prefix_).string();
-    std::string command = "rm -f " + shellQuote(root + "/installed/" + package_name + ".receipt");
-    return command;
-}
-
 bool PackageInstaller::installPackage(const std::filesystem::path& deb_path, std::ostream& log) const {
-    if (!std::filesystem::exists(deb_path)) {
+    if (!std::filesystem::exists(deb_path) || !std::filesystem::is_regular_file(deb_path)) {
         log << "package file not found: " << deb_path << '\n';
         return false;
     }
@@ -106,15 +95,37 @@ bool PackageInstaller::installPackage(const std::filesystem::path& deb_path, std
         return false;
     }
 
-    const std::filesystem::path root = defaultRootPath(root_prefix_);
-    const std::filesystem::path archive_dir = root / "archives";
-    std::filesystem::create_directories(archive_dir);
-    std::filesystem::copy_file(
-        deb_path,
-        archive_dir / deb_path.filename(),
-        std::filesystem::copy_options::overwrite_existing);
+    const auto root = safeRootPath();
+    const auto archives = root / "archives";
+    const auto installed = root / "installed";
+    if (!ensureWriteableDir(archives) || !ensureWriteableDir(installed)) {
+        log << "could not prepare package database directories under: " << root << '\n';
+        return false;
+    }
 
-    writeReceipt(root, info, deb_path);
+    const auto destination = archives / deb_path.filename();
+    std::error_code ec;
+    std::filesystem::copy_file(deb_path, destination, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        log << "failed to stage package file: " << ec.message() << '\n';
+        return false;
+    }
+
+    const auto receipt = installed / (info.name + ".receipt");
+    std::ofstream out(receipt, std::ios::trunc);
+    if (!out) {
+        log << "failed to write package receipt: " << receipt << '\n';
+        return false;
+    }
+
+    out << "name=" << info.name << '\n';
+    out << "version=" << info.version << '\n';
+    out << "architecture=" << info.architecture << '\n';
+    out << "maintainer=" << info.maintainer << '\n';
+    out << "description=" << info.description << '\n';
+    out << "source=" << deb_path.string() << '\n';
+    out.flush();
+
     log << "installed " << info.name << " version " << info.version << " via lightweight local record\n";
     return true;
 }
@@ -125,14 +136,20 @@ bool PackageInstaller::uninstallPackage(const std::string& package_name, std::os
         return false;
     }
 
-    const std::filesystem::path db_path = installedDbPath(root_prefix_);
-    const std::filesystem::path receipt = db_path / (package_name + ".receipt");
+    const auto root = safeRootPath();
+    const auto receipt = root / "installed" / (package_name + ".receipt");
     if (!std::filesystem::exists(receipt)) {
         log << "package not installed: " << package_name << '\n';
         return false;
     }
 
-    std::filesystem::remove(receipt);
+    std::error_code ec;
+    std::filesystem::remove(receipt, ec);
+    if (ec) {
+        log << "failed to remove receipt: " << receipt << '\n';
+        return false;
+    }
+
     log << "removed " << package_name << " from local package database\n";
     return true;
 }
