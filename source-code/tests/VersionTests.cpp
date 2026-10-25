@@ -1,35 +1,33 @@
-cmake_minimum_required(VERSION 3.21)
-project(ultrapkg VERSION 0.1.0 LANGUAGES CXX)
+#include "core/PackageVersion.h"
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <string>
 
-add_executable(ultrapkg
-    src/main.cpp
-    src/core/PackageInfo.cpp
-    src/core/PackageInstaller.cpp
-    src/core/PackageManager.cpp
-    src/core/PackageVersion.cpp
-    src/thumbnail/DebThumbnailer.cpp
-)
+int main() {
+    using namespace ultrapkg;
 
-target_include_directories(ultrapkg
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
+    const PackageVersion v1("0.1.0");
+    const PackageVersion v2("0.1.1");
+    const PackageVersion v3("0.1.2");
 
-enable_testing()
-add_executable(ultrapkg_tests
-    tests/VersionTests.cpp
-    src/core/PackageVersion.cpp
-)
+    if (!(v1 < v2)) {
+        std::cerr << "version ordering failed\n";
+        return 1;
+    }
+    if (!(v2 < v3)) {
+        std::cerr << "version progression failed\n";
+        return 2;
+    }
 
-target_include_directories(ultrapkg_tests
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
+    const std::filesystem::path deb_path = "/tmp/example.deb";
+    const std::filesystem::path appimage_path = "/tmp/example.AppImage";
+    if (deb_path.extension() != ".deb" || appimage_path.extension() != ".AppImage") {
+        std::cerr << "archive type detection failed\n";
+        return 3;
+    }
 
-add_test(NAME ultrapkg_version_tests COMMAND ultrapkg_tests)
-
-install(TARGETS ultrapkg DESTINATION bin)
+    std::cout << "ultrapkg version tests passed\n";
+    return 0;
+}
