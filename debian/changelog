@@ -1,0 +1,16 @@
+Source: ultrapkg
+Section: utils
+Priority: optional
+Maintainer: flaxware <flaxware@users.noreply.github.com>
+Build-Depends: debhelper (>= 12), cmake, g++, pkg-config
+Standards-Version: 4.6.0
+Homepage: https://github.com/flaxware/ultrapkg
+Rules-Requires-Root: no
+
+Package: ultrapkg
+Architecture: any
+Depends: ${misc:Depends}, dpkg, coreutils, imagemagick
+Description: Lightweight GPL package installer and .deb thumbnail helper for flax.system
+ Ultrapkg is a clean, modular package utility for local .deb files and desktop
+ integration. It follows the Flax system philosophy: simple, stable, and easy
+ to maintain.
