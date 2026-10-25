@@ -1,16 +1,33 @@
-Source: ultrapkg
-Section: utils
-Priority: optional
-Maintainer: flaxware <flaxware@users.noreply.github.com>
-Build-Depends: debhelper (>= 12), cmake, g++, pkg-config
-Standards-Version: 4.6.0
-Homepage: https://github.com/flaxware/ultrapkg
-Rules-Requires-Root: no
+cmake_minimum_required(VERSION 3.21)
+project(ultrapkg VERSION 0.1.0 LANGUAGES CXX)
 
-Package: ultrapkg
-Architecture: any
-Depends: ${misc:Depends}, dpkg, coreutils, imagemagick
-Description: Lightweight GPL package installer and .deb thumbnail helper for flax.system
- Ultrapkg is a clean, modular package utility for local .deb files and desktop
- integration. It follows the Flax system philosophy: simple, stable, and easy
- to maintain.
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+add_executable(ultrapkg
+    src/main.cpp
+    src/core/PackageInfo.cpp
+    src/core/PackageInstaller.cpp
+    src/core/PackageManager.cpp
+    src/core/PackageVersion.cpp
+    src/thumbnail/DebThumbnailer.cpp
+)
+
+target_include_directories(ultrapkg
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+enable_testing()
+add_executable(ultrapkg_tests
+    tests/VersionTests.cpp
+    src/core/PackageVersion.cpp
+)
+target_include_directories(ultrapkg_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+add_test(NAME ultrapkg_version_tests COMMAND ultrapkg_tests)
+
+install(TARGETS ultrapkg DESTINATION bin)

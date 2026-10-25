@@ -1,88 +1,169 @@
-#include "core/PackageManager.h"
-#include "thumbnail/DebThumbnailer.h"
+#include "core/PackageVersion.h"
 
-#include <filesystem>
-#include <iostream>
-#include <stdexcept>
+#include <algorithm>
+#include <cctype>
+#include <sstream>
 #include <string>
+#include <vector>
 
+namespace ultrapkg {
 namespace {
 
-void printHelp() {
-    std::cout << "Usage:\n";
-    std::cout << "  ultrapkg install <package.deb>\n";
-    std::cout << "  ultrapkg remove <package-name>\n";
-    std::cout << "  ultrapkg info <package.deb>\n";
-    std::cout << "  ultrapkg thumb <package.deb> <output.png> [size]\n";
-    std::cout << "  ultrapkg help\n";
+std::string toLower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+bool isDigitChar(char ch) {
+    return ch >= '0' && ch <= '9';
+}
+
+std::vector<std::string> splitSegments(const std::string& value) {
+    std::vector<std::string> segments;
+    std::string current;
+    for (char ch : value) {
+        if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+            current.push_back(ch);
+        } else {
+            if (!current.empty()) {
+                segments.push_back(current);
+                current.clear();
+            }
+            if (ch == '~') {
+                segments.push_back("~");
+            }
+        }
+    }
+    if (!current.empty()) {
+        segments.push_back(current);
+    }
+    return segments;
+}
+
+int compareNumeric(const std::string& lhs, const std::string& rhs) {
+    const long long left = std::stoll(lhs.empty() ? "0" : lhs);
+    const long long right = std::stoll(rhs.empty() ? "0" : rhs);
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
 }
 
 } // namespace
 
-int main(int argc, char** argv) {
-    try {
-        if (argc < 2) {
-            printHelp();
-            return 1;
-        }
+PackageVersion::PackageVersion(std::string value) : value_(normalize(std::move(value))) {}
 
-        const std::string command = argv[1];
+PackageVersion PackageVersion::parse(const std::string& value) {
+    return PackageVersion(value);
+}
 
-        if (command == "help" || command == "--help" || command == "-h") {
-            printHelp();
-            return 0;
-        }
+bool PackageVersion::isValid() const noexcept {
+    return !value_.empty();
+}
 
-        if (command == "install") {
-            if (argc < 3) {
-                printHelp();
-                return 1;
-            }
-            ultrapkg::PackageManager manager;
-            return manager.install(std::filesystem::path(argv[2]), std::cout) ? 0 : 2;
-        }
+const std::string& PackageVersion::raw() const noexcept {
+    return value_;
+}
 
-        if (command == "remove") {
-            if (argc < 3) {
-                printHelp();
-                return 1;
-            }
-            ultrapkg::PackageManager manager;
-            return manager.uninstall(argv[2], std::cout) ? 0 : 2;
-        }
+std::string PackageVersion::normalize(std::string value) {
+    if (value.empty()) {
+        return value;
+    }
 
-        if (command == "info") {
-            if (argc < 3) {
-                printHelp();
-                return 1;
-            }
-            ultrapkg::PackageManager manager;
-            return manager.inspect(std::filesystem::path(argv[2]), std::cout) ? 0 : 2;
-        }
+    while (!value.empty() && (value.front() == 'v' || value.front() == 'V')) {
+        value.erase(value.begin());
+    }
 
-        if (command == "thumb") {
-            if (argc < 4) {
-                printHelp();
-                return 1;
-            }
+    return value;
+}
 
-            unsigned int size = 128;
-            if (argc >= 5) {
-                size = static_cast<unsigned int>(std::stoul(argv[4]));
-            }
+int PackageVersion::compareSegments(const std::string& lhs, const std::string& rhs) {
+    if (lhs == rhs) {
+        return 0;
+    }
 
-            return ultrapkg::DebThumbnailer::generatePreview(
-                std::filesystem::path(argv[2]),
-                std::filesystem::path(argv[3]),
-                size,
-                std::cout) ? 0 : 3;
-        }
+    const bool lhsNumeric = std::all_of(lhs.begin(), lhs.end(), [](unsigned char ch) {
+        return std::isdigit(ch);
+    });
+    const bool rhsNumeric = std::all_of(rhs.begin(), rhs.end(), [](unsigned char ch) {
+        return std::isdigit(ch);
+    });
 
-        std::cerr << "unknown command: " << command << '\n';
-        printHelp();
-        return 1;
-    } catch (const std::exception& ex) {
-        std::cerr << "ultrapkg error: " << ex.what() << '\n';
+    if (lhsNumeric && rhsNumeric) {
+        return compareNumeric(lhs, rhs);
+    }
+
+    if (lhsNumeric) {
+        return -1;
+    }
+    if (rhsNumeric) {
         return 1;
     }
+
+    const std::string lowerLhs = toLower(lhs);
+    const std::string lowerRhs = toLower(rhs);
+    const auto compareValue = lowerLhs.compare(lowerRhs);
+    return compareValue < 0 ? -1 : 1;
 }
+
+int PackageVersion::compare(const PackageVersion& other) const noexcept {
+    if (value_ == other.value_) {
+        return 0;
+    }
+
+    std::vector<std::string> lhsParts = splitSegments(value_);
+    std::vector<std::string> rhsParts = splitSegments(other.value_);
+
+    const std::size_t common = std::min(lhsParts.size(), rhsParts.size());
+    for (std::size_t i = 0; i < common; ++i) {
+        if (lhsParts[i] == rhsParts[i]) {
+            continue;
+        }
+        if (lhsParts[i] == "~") {
+            return -1;
+        }
+        if (rhsParts[i] == "~") {
+            return 1;
+        }
+        const int result = compareSegments(lhsParts[i], rhsParts[i]);
+        if (result != 0) {
+            return result;
+        }
+    }
+
+    if (lhsParts.size() < rhsParts.size()) {
+        return -1;
+    }
+    if (lhsParts.size() > rhsParts.size()) {
+        return 1;
+    }
+
+    return 0;
+}
+
+bool operator==(const PackageVersion& lhs, const PackageVersion& rhs) {
+    return lhs.compare(rhs) == 0;
+}
+
+bool operator!=(const PackageVersion& lhs, const PackageVersion& rhs) {
+    return !(lhs == rhs);
+}
+
+bool operator<(const PackageVersion& lhs, const PackageVersion& rhs) {
+    return lhs.compare(rhs) < 0;
+}
+
+bool operator>(const PackageVersion& lhs, const PackageVersion& rhs) {
+    return lhs.compare(rhs) > 0;
+}
+
+bool operator<=(const PackageVersion& lhs, const PackageVersion& rhs) {
+    return lhs.compare(rhs) <= 0;
+}
+
+bool operator>=(const PackageVersion& lhs, const PackageVersion& rhs) {
+    return lhs.compare(rhs) >= 0;
+}
+
+} // namespace ultrapkg

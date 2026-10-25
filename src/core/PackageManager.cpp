@@ -1,36 +1,30 @@
-#include "core/PackageInfo.h"
-#include "core/PackageInstaller.h"
-#include "core/PackageManager.h"
+#pragma once
 
 #include <filesystem>
-#include <fstream>
-#include <iostream>
+#include <iosfwd>
+#include <string>
+#include <vector>
 
 namespace ultrapkg {
 
-bool PackageManager::install(const std::filesystem::path& deb_path, std::ostream& log) {
-    PackageInstaller installer;
-    return installer.installPackage(deb_path, log);
-}
+struct PackageInfo;
 
-bool PackageManager::uninstall(const std::string& package_name, std::ostream& log) {
-    PackageInstaller installer;
-    return installer.uninstallPackage(package_name, log);
-}
+class PackageManager {
+public:
+    bool install(const std::filesystem::path& deb_path, std::ostream& log);
+    bool uninstall(const std::string& package_name, std::ostream& log);
+    bool inspect(const std::filesystem::path& deb_path, std::ostream& log);
 
-bool PackageManager::inspect(const std::filesystem::path& deb_path, std::ostream& log) {
-    const auto info = PackageInfoReader::fromDeb(deb_path);
-    if (!info.valid) {
-        log << "could not read valid package metadata from: " << deb_path << '\n';
-        return false;
-    }
-
-    log << "package: " << info.name << '\n';
-    log << "version: " << info.version << '\n';
-    log << "architecture: " << info.architecture << '\n';
-    log << "maintainer: " << info.maintainer << '\n';
-    log << "description: " << info.description << '\n';
-    return true;
-}
+    bool aptInstall(const std::filesystem::path& deb_path, std::ostream& log);
+    bool aptRemove(const std::string& package_name, std::ostream& log);
+    bool aptList(std::ostream& log) const;
+    bool aptSearch(const std::string& query, std::ostream& log) const;
+    bool aptShow(const std::string& package_name, std::ostream& log) const;
+    bool aptitudeSearch(const std::string& query, std::ostream& log) const;
+    bool aptitudeDepends(const std::string& package_name, std::ostream& log) const;
+    bool aptitudeInstall(const std::filesystem::path& deb_path, std::ostream& log);
+    bool upgrade(const std::string& package_name, const std::filesystem::path& deb_path, std::ostream& log);
+    std::vector<PackageInfo> installedPackages() const;
+};
 
 } // namespace ultrapkg
